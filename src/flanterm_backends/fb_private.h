@@ -127,6 +127,9 @@ struct flanterm_fb_context {
     size_t old_cursor_y;
 
     bool full_refresh_pending;
+
+    bool damaged;
+    size_t damage_x1, damage_y1, damage_x2, damage_y2;
 };
 
 #ifdef __cplusplus

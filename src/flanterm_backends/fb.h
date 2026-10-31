@@ -73,6 +73,7 @@ struct flanterm_context *flanterm_fb_init(
 );
 
 void flanterm_fb_set_flush_callback(struct flanterm_context *ctx, void (*flush_callback)(volatile void *address, size_t length));
+bool flanterm_fb_get_damage(struct flanterm_context *ctx, size_t *x, size_t *y, size_t *width, size_t *height);
 
 #ifdef __cplusplus
 }

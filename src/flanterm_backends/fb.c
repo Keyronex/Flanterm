@@ -565,6 +565,52 @@ static void flanterm_fb_restore_state(struct flanterm_context *_ctx) {
     ctx->cursor_y = ctx->saved_state_cursor_y;
 }
 
+static void damage(struct flanterm_fb_context *ctx, size_t x, size_t y, size_t width, size_t height) {
+    size_t x1, y1, x2, y2;
+
+    switch (ctx->rotation) {
+        default:
+        case FLANTERM_FB_ROTATE_0:
+            x1 = x; y1 = y;
+            x2 = x + width; y2 = y + height;
+            break;
+        case FLANTERM_FB_ROTATE_90:
+            x1 = ctx->height - (y + height); y1 = x;
+            x2 = ctx->height - y; y2 = x + width;
+            break;
+        case FLANTERM_FB_ROTATE_180:
+            x1 = ctx->width - (x + width); y1 = ctx->height - (y + height);
+            x2 = ctx->width - x; y2 = ctx->height - y;
+            break;
+        case FLANTERM_FB_ROTATE_270:
+            x1 = y; y1 = ctx->width - (x + width);
+            x2 = y + height; y2 = ctx->width - x;
+            break;
+    }
+
+    if (!ctx->damaged) {
+        ctx->damage_x1 = x1;
+        ctx->damage_y1 = y1;
+        ctx->damage_x2 = x2;
+        ctx->damage_y2 = y2;
+        ctx->damaged = true;
+        return;
+    }
+
+    if (x1 < ctx->damage_x1) {
+        ctx->damage_x1 = x1;
+    }
+    if (y1 < ctx->damage_y1) {
+        ctx->damage_y1 = y1;
+    }
+    if (x2 > ctx->damage_x2) {
+        ctx->damage_x2 = x2;
+    }
+    if (y2 > ctx->damage_y2) {
+        ctx->damage_y2 = y2;
+    }
+}
+
 static void flanterm_fb_swap_palette(struct flanterm_context *_ctx) {
     struct flanterm_fb_context *ctx = (void *)_ctx;
     uint32_t tmp = ctx->text_bg;
@@ -584,6 +630,8 @@ static void plot_char_scaled_canvas(struct flanterm_context *_ctx, struct flante
 
     x = ctx->offset_x + x * ctx->glyph_width;
     y = ctx->offset_y + y * ctx->glyph_height;
+
+    damage(ctx, x, y, ctx->glyph_width, ctx->glyph_height);
 
     bool *glyph = &ctx->font_bool[c->c * ctx->font_height * ctx->font_width];
 
@@ -656,6 +704,8 @@ static void plot_char_scaled_uncanvas(struct flanterm_context *_ctx, struct flan
     x = ctx->offset_x + x * ctx->glyph_width;
     y = ctx->offset_y + y * ctx->glyph_height;
 
+    damage(ctx, x, y, ctx->glyph_width, ctx->glyph_height);
+
     bool *glyph = &ctx->font_bool[c->c * ctx->font_height * ctx->font_width];
 
     volatile uint32_t *dest;
@@ -718,6 +768,8 @@ static void plot_char_unscaled_canvas(struct flanterm_context *_ctx, struct flan
     x = ctx->offset_x + x * ctx->glyph_width;
     y = ctx->offset_y + y * ctx->glyph_height;
 
+    damage(ctx, x, y, ctx->glyph_width, ctx->glyph_height);
+
     bool *glyph = &ctx->font_bool[c->c * ctx->font_height * ctx->font_width];
 
     volatile uint32_t *dest;
@@ -779,6 +831,8 @@ static void plot_char_unscaled_uncanvas(struct flanterm_context *_ctx, struct fl
 
     x = ctx->offset_x + x * ctx->glyph_width;
     y = ctx->offset_y + y * ctx->glyph_height;
+
+    damage(ctx, x, y, ctx->glyph_width, ctx->glyph_height);
 
     bool *glyph = &ctx->font_bool[c->c * ctx->font_height * ctx->font_width];
 
@@ -1170,6 +1224,8 @@ static void full_refresh(struct flanterm_context *_ctx) {
     struct flanterm_fb_context *ctx = (void *)_ctx;
 
     ctx->full_refresh_pending = false;
+
+    damage(ctx, 0, 0, ctx->width, ctx->height);
 
     uint32_t default_bg = ctx->default_bg;
 
@@ -1702,4 +1758,23 @@ void flanterm_fb_set_flush_callback(struct flanterm_context *_ctx, void (*flush_
     if (flush_callback != NULL) {
         flush_callback(ctx->phys_framebuffer, ctx->pitch * ctx->phys_height);
     }
+}
+
+bool flanterm_fb_get_damage(struct flanterm_context *_ctx, size_t *x, size_t *y, size_t *width, size_t *height) {
+    struct flanterm_fb_context *ctx = (void *)_ctx;
+
+    if (!ctx->damaged) {
+        return false;
+    }
+
+    size_t offset = ctx->framebuffer - ctx->phys_framebuffer;
+    size_t stride = ctx->pitch / 4;
+
+    *x = offset % stride + ctx->damage_x1;
+    *y = offset / stride + ctx->damage_y1;
+    *width = ctx->damage_x2 - ctx->damage_x1;
+    *height = ctx->damage_y2 - ctx->damage_y1;
+
+    ctx->damaged = false;
+    return true;
 }
